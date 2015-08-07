@@ -1,9 +1,9 @@
 (ns feedparser-clj.core
-  (:import (com.sun.syndication.io SyndFeedInput XmlReader)
+  (:import (com.sun.syndication.io SyndFeedInput XmlReader WireFeedInput)
            (java.net URL)
-           (java.io InputStreamReader)
-           (com.sun.syndication.feed.synd SyndFeed))
-  (:gen-class))
+           (java.io Reader)
+           (com.sun.syndication.feed.synd SyndFeedImpl)
+           (javax.xml XMLConstants)))
 
 (defstruct feed :authors :categories :contributors :copyright :description
            :encoding :entries :feed-type :image :language :link :entry-links
@@ -82,8 +82,22 @@
               :title (.getTitle f)
               :uri (.getUri f)))
 
-(defn- parse-internal [xmlreader]
-  (let [feedinput (new SyndFeedInput)
+(defn ^WireFeedInput gen-feed-input
+  []
+  (proxy [WireFeedInput] []
+    (createSAXBuilder []
+      (doto (proxy-super createSAXBuilder)
+        (.setFeature XMLConstants/FEATURE_SECURE_PROCESSING true)
+        (.setFeature "http://apache.org/xml/features/disallow-doctype-decl" true)))))
+
+(defn ^SyndFeedInput gen-syndfeedinput
+  []
+  (proxy [SyndFeedInput] []
+      (build [^Reader rdr]
+        (SyndFeedImpl. (.build (gen-feed-input) rdr) false))))
+
+(defn- parse-internal [^XmlReader xmlreader]
+  (let [feedinput (gen-syndfeedinput)
         syndfeed (.build feedinput xmlreader)]
     (make-feed syndfeed)))
 
@@ -94,10 +108,3 @@
                                       feedsource))))
   ([feedsource content-type]
      (parse-internal (new XmlReader feedsource content-type))))
-
-(defn -main "Show basic information for a feed, given a URL"
-  [feedsource]
-  (println "Using feed:" feedsource)
-  (let [myfeed (parse-feed feedsource)]
-    (println "Found" (count (:entries myfeed)) "entries")
-    (println myfeed)))
